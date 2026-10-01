@@ -2650,6 +2650,10 @@ class ToolsCore
 
         fwrite($write_fd, "RewriteEngine on\n");
 
+        // OpenLiteSpeed only reads the rewrite rules of .htaccess files: it ignores SetEnv above and FilesMatch below
+        fwrite($write_fd, "RewriteRule ^ - [E=HTTP_MOD_REWRITE:On]\n");
+        fwrite($write_fd, 'RewriteRule (?:^|/)(?:composer\.lock|\.git[^/]*|\.env[^/]*)$ - [F]' . "\n\n");
+
         if (
             !$medias
             && Configuration::getMultiShopValues('PS_MEDIA_SERVER_1')
@@ -2693,11 +2697,6 @@ class ToolsCore
                 }
                 fwrite($write_fd, 'RewriteRule . - [E=REWRITEBASE:' . $uri['physical'] . ']' . PHP_EOL);
 
-                // Webservice
-                fwrite($write_fd, 'RewriteRule ^api(?:/(.*))?$ %{ENV:REWRITEBASE}webservice/dispatcher.php?url=$1 [QSA,L]' . PHP_EOL);
-                // upload folder
-                fwrite($write_fd, 'RewriteRule ^upload/.+$ %{ENV:REWRITEBASE}index.php [QSA,L]' . "\n\n");
-
                 if (!$rewrite_settings) {
                     $rewrite_settings = (int) Configuration::get('PS_REWRITING_SETTINGS', null, null, (int) $uri['id_shop']);
                 }
@@ -2714,10 +2713,31 @@ class ToolsCore
                         fwrite($write_fd, $domain_rewrite_cond);
                         fwrite($write_fd, 'RewriteRule ^' . trim($uri['virtual'], '/') . '$ ' . $uri['physical'] . $uri['virtual'] . " [L,R]\n");
                     }
+                    // LiteSpeed stops rewriting at [L] instead of starting a new pass like Apache: the virtual URI is
+                    // stripped and the rules below are applied to the rest of the URI in the same pass.
+                    // OpenLiteSpeed reads the rules of both IfModule blocks, the second one then matches nothing.
+                    fwrite($write_fd, "<IfModule LiteSpeed>\n");
                     fwrite($write_fd, $media_domains);
                     fwrite($write_fd, $domain_rewrite_cond);
-                    fwrite($write_fd, 'RewriteRule ^' . ltrim($uri['virtual'], '/') . '(.*) ' . $uri['physical'] . "$1 [L]\n\n");
+                    fwrite($write_fd, 'RewriteRule ^(?:' . ltrim($uri['virtual'], '/') . ')+(.*) $1 [C,DPI]' . PHP_EOL);
+                    // Paths starting with an existing file or folder (assets, back office...) are mapped again by the server.
+                    // %1 is the shop folder: LiteSpeed truncates REQUEST_FILENAME after the first missing path segment.
+                    fwrite($write_fd, 'RewriteCond %{REQUEST_FILENAME}::$1$2 ^(.*?)([^:]*)::\2' . PHP_EOL);
+                    fwrite($write_fd, "RewriteCond %1$1 -s [OR]\n");
+                    fwrite($write_fd, "RewriteCond %1$1 -l [OR]\n");
+                    fwrite($write_fd, "RewriteCond %1$1 -d\n");
+                    fwrite($write_fd, 'RewriteRule ^(?!upload/)([^/]*)(.*)$ ' . $uri['physical'] . "$1$2 [L]\n");
+                    fwrite($write_fd, "</IfModule>\n<IfModule !LiteSpeed>\n");
+                    fwrite($write_fd, $media_domains);
+                    fwrite($write_fd, $domain_rewrite_cond);
+                    fwrite($write_fd, 'RewriteRule ^' . ltrim($uri['virtual'], '/') . '(.*) ' . $uri['physical'] . "$1 [L]\n");
+                    fwrite($write_fd, "</IfModule>\n\n");
                 }
+
+                // Webservice
+                fwrite($write_fd, 'RewriteRule ^api(?:/(.*))?$ %{ENV:REWRITEBASE}webservice/dispatcher.php?url=$1 [QSA,L]' . PHP_EOL);
+                // upload folder
+                fwrite($write_fd, 'RewriteRule ^upload/.+$ %{ENV:REWRITEBASE}index.php [QSA,L]' . "\n\n");
 
                 if ($rewrite_settings) {
                     // Compatibility with the old image filesystem
