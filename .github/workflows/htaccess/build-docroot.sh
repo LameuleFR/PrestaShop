@@ -12,6 +12,8 @@ echo '<?php echo "INDEX uri=", $_SERVER["REQUEST_URI"] ?? "", " qs=", $_SERVER["
 echo '<?php echo "WEBSERVICE ", $_SERVER["QUERY_STRING"] ?? "", " sn=", $_SERVER["SCRIPT_NAME"] ?? ""; // WEBSERVICE' > "$d/webservice/dispatcher.php"
 echo '<?php echo "AUTH ", $_SERVER["HTTP_AUTHORIZATION"] ?? "none"; // AUTH' > "$d/auth.php"
 echo '<?php echo "MODULE_AJAX pi=", $_SERVER["PATH_INFO"] ?? ""; // MODULE_AJAX' > "$d/modules/foo/ajax.php"
+mkdir -p "$d/modules/bar"
+echo "MODULE_BAR_INDEX_HTML" > "$d/modules/bar/index.html"
 echo 'UPLOADED_FILE' > "$d/upload/file.txt"
 cp "$root/upload/.htaccess" "$d/upload/.htaccess"
 

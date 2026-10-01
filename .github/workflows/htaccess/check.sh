@@ -78,6 +78,7 @@ shop_cases() {
   body "$host" "${p}themes/classic/assets/css/link.css" THEME_CSS
   body "$host" "${p}modules/foo/ajax.php" MODULE_AJAX
   body "$host" "${p}modules/foo/ajax.php/extra" MODULE_AJAX "pi=/extra"
+  body "$host" "${p}modules/bar/" MODULE_BAR_INDEX_HTML
   body "$host" "${p}img/p/1/2/12-home_default.jpg" P12_JPG
   body "$host" "${p}admin-xyz/" ADMIN
   body "$host" "${p}admin-xyz/index.php?controller=AdminLogin" ADMIN

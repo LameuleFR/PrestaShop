@@ -2631,6 +2631,9 @@ class ToolsCore
         fwrite($write_fd, "# Prevent directory listings\n");
         fwrite($write_fd, "Options -Indexes\n\n");
 
+        // Otherwise Apache tries each name of its own list, and each missing one goes through the rewrite rules
+        fwrite($write_fd, "<IfModule mod_dir.c>\nDirectoryIndex index.php index.html\n</IfModule>\n\n");
+
         if ($disable_modsec) {
             fwrite($write_fd, "<IfModule mod_security.c>\nSecFilterEngine Off\nSecFilterScanPOST Off\n</IfModule>\n\n");
         }
@@ -2880,6 +2883,8 @@ FileETag none
      */
     private static function writeHtaccessShopRules($writeFd, bool $rewriteSettings, string $imageConditions, string $fancyboxCondition): void
     {
+        // Ends the new pass of the requests rewritten to index.php
+        fwrite($writeFd, 'RewriteRule ^index\.php$ - [L]' . PHP_EOL);
         // Webservice
         fwrite($writeFd, 'RewriteRule ^api(?:/(.*))?$ %{ENV:REWRITEBASE}webservice/dispatcher.php?url=$1 [QSA,L]' . PHP_EOL);
         // upload folder
@@ -2888,6 +2893,8 @@ FileETag none
         if ($rewriteSettings) {
             // Compatibility with the old image filesystem
             fwrite($writeFd, "# Rewrites for product images (support up to < 10 million images)\n");
+            // Skips the 9 image rules below for the other URLs
+            fwrite($writeFd, 'RewriteRule !^(?:\d|c/) - [S=9]' . PHP_EOL);
 
             // Rewrite product images < 10 millions
             $pathComponents = [];
