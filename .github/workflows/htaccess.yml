@@ -1,0 +1,38 @@
+name: Htaccess
+on:
+  push:
+    paths:
+      - 'classes/Tools.php'
+      - '.github/workflows/htaccess.yml'
+      - '.github/workflows/htaccess/**'
+  pull_request:
+    paths:
+      - 'classes/Tools.php'
+      - '.github/workflows/htaccess.yml'
+      - '.github/workflows/htaccess/**'
+
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.event_name }}-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rewrite-rules:
+    name: Rewrite rules on ${{ matrix.server }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [ apache, openlitespeed, litespeed ]
+    steps:
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.1
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Check generated .htaccess on ${{ matrix.server }}
+        run: bash .github/workflows/htaccess/run.sh ${{ matrix.server }}
