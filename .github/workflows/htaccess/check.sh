@@ -69,9 +69,9 @@ header() {
   report $ok "$5" "$1$2 => header $([[ $4 == 1 ]] || echo 'absent: ')$3" "$code $(grep -iE "$3" <<< "$headers" | head -1)"
 }
 
-# Cases every shop URL must handle; $2 is the shop base path (physical + virtual URI)
+# Cases every shop URL must handle; $2 is the shop base path (physical + virtual URI), $3 its physical URI
 shop_cases() {
-  local host="$1" p="$2"
+  local host="$1" p="$2" physical="${3:-$phys}"
   [[ $p == "$phys" ]] && body "$host" "$p" INDEX
   body "$host" "${p}index.php?id_category=3&controller=category" INDEX
   body "$host" "${p}themes/classic/assets/css/theme.css" THEME_CSS
@@ -86,7 +86,7 @@ shop_cases() {
   body "$host" "${p}admin-xyz/sell/catalog/products" ADMIN
   body "$host" "${p}admin-api/products" ADMIN_API
   body "$host" "${p}api" WEBSERVICE "url="
-  body "$host" "${p}api/products?ws_key=KEY" WEBSERVICE "url=products&ws_key=KEY"
+  body "$host" "${p}api/products?ws_key=KEY" WEBSERVICE "url=products&ws_key=KEY sn=${physical}webservice/dispatcher.php"
   # uploads are served by a controller that checks access rights
   body "$host" "${p}upload/file.txt" INDEX
   status "$host" "${p}composer.lock" 403
@@ -97,7 +97,7 @@ shop_cases() {
     redirect "$host" "${p}old-url" /new-url
   fi
   if [[ $friendly == 1 ]]; then
-    body "$host" "${p}men-clothes?page=2" INDEX "uri=${p}men-clothes?page=2 qs=page=2 modrw=On"
+    body "$host" "${p}men-clothes?page=2" INDEX "uri=${p}men-clothes?page=2 qs=page=2 modrw=On sn=${physical}index.php"
     body "$host" "${p}3-men" INDEX
     body "$host" "${p}1-home_default/hummingbird.jpg" P1_JPG
     for ext in jpg jpeg webp png avif; do body "$host" "${p}12-home_default/hummingbird.$ext" "P12_${ext^^}"; done
@@ -152,7 +152,20 @@ case "$scenario" in
     for host in shop.test second.test secure.second.test; do shop_cases "$host" "$phys"; done
     if [[ $friendly == 1 ]]; then
       for host in media1.test media2.test media3.test; do body "$host" "${phys}12-home_default/hummingbird.jpg" P12_JPG; done
+      # Shop pages are only served on the shop domains. URLs not requested before on another domain: OpenLiteSpeed
+      # caches static files by URL whatever the host.
+      status media1.test "${phys}men-clothes" 404
+      status unknown.test "${phys}women-clothes" 404
+      status unknown.test "${phys}12-home_default/unknown-host.jpg" 404
     fi
+    ;;
+  manydomains)
+    shop_cases shop.test "$phys"
+    shop_cases shop400.many-domains.test "$phys"
+    ;;
+  physicals)
+    shop_cases shop.test "$phys"
+    shop_cases second.test "${phys}alt/" "${phys}alt/"
     ;;
   *) echo "Unknown scenario: $scenario" >&2; exit 2 ;;
 esac

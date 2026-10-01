@@ -8,6 +8,8 @@
  *   single   one shop on shop.test, multistore disabled
  *   virtual  multistore on shop.test: a main shop and a shop on the virtual URI "shop2/"
  *   domains  multistore: shop.test, second.test (SSL domain secure.second.test), media servers media1-3.test
+ *   manydomains multistore: shop.test and 399 other domains
+ *   physicals multistore: shop.test on <physical_uri>, second.test on <physical_uri>alt/ (a link to the same folder)
  */
 declare(strict_types=1);
 
@@ -15,11 +17,11 @@ declare(strict_types=1);
 
 define('_PS_ROOT_DIR_', __DIR__);
 
-function shopUrl(int $idShop, string $domain, string $domainSsl, string $virtualUri): object
+function shopUrl(int $idShop, string $domain, string $domainSsl, string $virtualUri, string $physicalSuffix = ''): object
 {
     global $physicalUri;
 
-    return (object) ['id_shop' => $idShop, 'domain' => $domain, 'domain_ssl' => $domainSsl, 'physical_uri' => $physicalUri, 'virtual_uri' => $virtualUri];
+    return (object) ['id_shop' => $idShop, 'domain' => $domain, 'domain_ssl' => $domainSsl, 'physical_uri' => $physicalUri . $physicalSuffix, 'virtual_uri' => $virtualUri];
 }
 
 class Configuration
@@ -64,6 +66,15 @@ class ShopUrl
                 return [shopUrl(1, 'shop.test', 'shop.test', ''), shopUrl(2, 'shop.test', 'shop.test', 'shop2/')];
             case 'domains':
                 return [shopUrl(1, 'shop.test', 'shop.test', ''), shopUrl(2, 'second.test', 'secure.second.test', '')];
+            case 'manydomains':
+                $shopUrls = [shopUrl(1, 'shop.test', 'shop.test', '')];
+                for ($idShop = 2; $idShop <= 400; ++$idShop) {
+                    $shopUrls[] = shopUrl($idShop, "shop$idShop.many-domains.test", "shop$idShop.many-domains.test", '');
+                }
+
+                return $shopUrls;
+            case 'physicals':
+                return [shopUrl(1, 'shop.test', 'shop.test', ''), shopUrl(2, 'second.test', 'second.test', '', 'alt/')];
         }
         throw new InvalidArgumentException("Unknown scenario $scenario");
     }

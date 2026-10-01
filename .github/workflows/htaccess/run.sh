@@ -59,7 +59,7 @@ fi
 
 results="$(mktemp)"
 n=0
-for scenario in single virtual domains; do
+for scenario in single virtual domains manydomains physicals; do
   for friendly in 1 0; do
     for cache in 1 0; do
       for layout in "docroot:/" "subfolder:/ps/"; do
@@ -76,6 +76,7 @@ for scenario in single virtual domains; do
         fi
         docker exec "$cid" sh -c "rm -rf $docroot/* $docroot/.[!.]*"
         docker cp "$work/www/." "$cid:$docroot/"
+        [[ $scenario == physicals ]] && docker exec "$cid" ln -s . "$docroot${phys}alt"
         docker exec "$cid" chown -R "$owner" "$docroot"
         reload
         wait_rules "$n" "$phys" || exit 1

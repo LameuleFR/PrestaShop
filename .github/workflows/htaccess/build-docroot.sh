@@ -8,8 +8,8 @@ root="$(cd "$(dirname "$0")/../../.." && pwd)"
 mkdir -p "$d/webservice" "$d/modules/foo" "$d/upload" "$d/admin-xyz" "$d/admin-api" "$d/img/c" "$d/img/p/1/2/3/4/5/6/7" \
   "$d/themes/classic/assets/css" "$d/themes/classic/assets/fonts" "$d/js/jquery/plugins/fancybox/images"
 
-echo '<?php echo "INDEX uri=", $_SERVER["REQUEST_URI"] ?? "", " qs=", $_SERVER["QUERY_STRING"] ?? "", " modrw=", $_SERVER["HTTP_MOD_REWRITE"] ?? "none"; // INDEX' > "$d/index.php"
-echo '<?php echo "WEBSERVICE ", $_SERVER["QUERY_STRING"] ?? ""; // WEBSERVICE' > "$d/webservice/dispatcher.php"
+echo '<?php echo "INDEX uri=", $_SERVER["REQUEST_URI"] ?? "", " qs=", $_SERVER["QUERY_STRING"] ?? "", " modrw=", $_SERVER["HTTP_MOD_REWRITE"] ?? "none", " sn=", $_SERVER["SCRIPT_NAME"] ?? ""; // INDEX' > "$d/index.php"
+echo '<?php echo "WEBSERVICE ", $_SERVER["QUERY_STRING"] ?? "", " sn=", $_SERVER["SCRIPT_NAME"] ?? ""; // WEBSERVICE' > "$d/webservice/dispatcher.php"
 echo '<?php echo "AUTH ", $_SERVER["HTTP_AUTHORIZATION"] ?? "none"; // AUTH' > "$d/auth.php"
 echo '<?php echo "MODULE_AJAX pi=", $_SERVER["PATH_INFO"] ?? ""; // MODULE_AJAX' > "$d/modules/foo/ajax.php"
 echo 'UPLOADED_FILE' > "$d/upload/file.txt"

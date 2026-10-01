@@ -2668,10 +2668,12 @@ class ToolsCore
         }
 
         $media_domains = '';
+        $media_hosts = [];
         foreach ($medias as $media) {
             foreach ($media as $media_url) {
                 if ($media_url) {
                     $media_domains .= 'RewriteCond %{HTTP_HOST} ^' . $media_url . '$ [OR]' . PHP_EOL;
+                    $media_hosts[] = str_replace(['[', ']'], ['\[', '\]'], $media_url);
                 }
             }
         }
@@ -2685,17 +2687,28 @@ class ToolsCore
         fwrite($write_fd, "RewriteCond %{HTTP:Authorization} .\n");
         fwrite($write_fd, "RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]\n\n");
 
+        // Apache parses the .htaccess file on each request: when all shops share the same physical URI, their rules
+        // are written once instead of once per shop URL
+        $physical_uris = array_unique(array_column(array_merge(...array_values($domains)), 'physical'));
+        $share_rules = count($physical_uris) === 1;
+        $shop_hosts = [];
+
         foreach ($domains as $domain => $list_uri) {
             // As we use regex in the htaccess, ipv6 surrounded by brackets must be escaped
             $domain = str_replace(['[', ']'], ['\[', '\]'], $domain);
+            $shop_hosts[] = $domain;
 
             $domain_rewrite_cond = '';
             foreach ($list_uri as $uri) {
-                fwrite($write_fd, PHP_EOL . PHP_EOL . '#Domain: ' . $domain . PHP_EOL);
-                if (Shop::isFeatureActive()) {
-                    fwrite($write_fd, 'RewriteCond %{HTTP_HOST} ^' . $domain . '$' . PHP_EOL);
+                if (!$share_rules || $uri['virtual']) {
+                    fwrite($write_fd, PHP_EOL . PHP_EOL . '#Domain: ' . $domain . PHP_EOL);
                 }
-                fwrite($write_fd, 'RewriteRule . - [E=REWRITEBASE:' . $uri['physical'] . ']' . PHP_EOL);
+                if (!$share_rules) {
+                    if (Shop::isFeatureActive()) {
+                        fwrite($write_fd, 'RewriteCond %{HTTP_HOST} ^' . $domain . '$' . PHP_EOL);
+                    }
+                    fwrite($write_fd, 'RewriteRule . - [E=REWRITEBASE:' . $uri['physical'] . ']' . PHP_EOL);
+                }
 
                 if (!$rewrite_settings) {
                     $rewrite_settings = (int) Configuration::get('PS_REWRITING_SETTINGS', null, null, (int) $uri['id_shop']);
@@ -2734,55 +2747,33 @@ class ToolsCore
                     fwrite($write_fd, "</IfModule>\n\n");
                 }
 
-                // Webservice
-                fwrite($write_fd, 'RewriteRule ^api(?:/(.*))?$ %{ENV:REWRITEBASE}webservice/dispatcher.php?url=$1 [QSA,L]' . PHP_EOL);
-                // upload folder
-                fwrite($write_fd, 'RewriteRule ^upload/.+$ %{ENV:REWRITEBASE}index.php [QSA,L]' . "\n\n");
-
-                if ($rewrite_settings) {
-                    // Compatibility with the old image filesystem
-                    fwrite($write_fd, "# Rewrites for product images (support up to < 10 million images)\n");
-
-                    // Rewrite product images < 10 millions
-                    $path_components = [];
-                    for ($i = 1; $i <= 7; ++$i) {
-                        $path_components[] = '$' . ($i + 1); // paths start on 2
-                        $path_images = implode('/', $path_components);
-                        fwrite($write_fd, $media_domains);
-                        fwrite($write_fd, $domain_rewrite_cond);
-                        fwrite($write_fd, 'RewriteRule ^(' . str_repeat('([\d])', $i) . '(?:\-[\w-]*)?)/.+(\.(?:jpe?g|webp|png|avif))$ %{ENV:REWRITEBASE}img/p/' . $path_images . '/$1$' . ($i + 2) . " [L]\n");
-                    }
-
-                    fwrite($write_fd, "# Rewrites for category images\n");
-                    fwrite($write_fd, $media_domains);
-                    fwrite($write_fd, $domain_rewrite_cond);
-                    fwrite($write_fd, 'RewriteRule ^c/([\d]+)(|_thumb)(\-[\.*\w-]*)/.+(\.(?:jpe?g|webp|png|avif))$ %{ENV:REWRITEBASE}img/c/$1$2$3$4 [L]' . PHP_EOL);
-                    fwrite($write_fd, $media_domains);
-                    fwrite($write_fd, $domain_rewrite_cond);
-                    fwrite($write_fd, 'RewriteRule ^c/([a-zA-Z_-]+)(|_thumb)(-[\d]+)?/.+(\.(?:jpe?g|webp|png|avif))$ %{ENV:REWRITEBASE}img/c/$1$2$3$4 [L]' . PHP_EOL);
+                if (!$share_rules) {
+                    self::writeHtaccessShopRules(
+                        $write_fd,
+                        (bool) $rewrite_settings,
+                        $media_domains . $domain_rewrite_cond,
+                        Shop::isFeatureActive() ? $domain_rewrite_cond : ''
+                    );
                 }
-
-                fwrite($write_fd, "# AlphaImageLoader for IE and fancybox\n");
-                if (Shop::isFeatureActive()) {
-                    fwrite($write_fd, $domain_rewrite_cond);
-                }
-                fwrite($write_fd, 'RewriteRule ^images_ie/?([^/]+)\.(jpe?g|png|gif)$ %{ENV:REWRITEBASE}js/jquery/plugins/fancybox/images/$1.$2 [L]' . PHP_EOL);
             }
 
-            // Redirections to dispatcher
+            if (!$share_rules && $rewrite_settings) {
+                self::writeHtaccessDispatcherRules($write_fd, Shop::isFeatureActive() ? $domain_rewrite_cond : '');
+            }
+        }
+
+        if ($share_rules) {
+            $dispatcher_cond = Shop::isFeatureActive() ? self::getHtaccessHostConditions($shop_hosts) : '';
+            fwrite($write_fd, PHP_EOL . PHP_EOL . '# Rules shared by all shop URLs' . PHP_EOL);
+            fwrite($write_fd, 'RewriteRule . - [E=REWRITEBASE:' . reset($physical_uris) . ']' . PHP_EOL);
+            self::writeHtaccessShopRules(
+                $write_fd,
+                (bool) $rewrite_settings,
+                self::getHtaccessHostConditions(array_merge($media_hosts, $shop_hosts)),
+                $dispatcher_cond
+            );
             if ($rewrite_settings) {
-                fwrite($write_fd, "\n# Send all other traffic to dispatcher\n");
-                fwrite($write_fd, "RewriteCond %{REQUEST_FILENAME} -s [OR]\n");
-                fwrite($write_fd, "RewriteCond %{REQUEST_FILENAME} -l [OR]\n");
-                fwrite($write_fd, "RewriteCond %{REQUEST_FILENAME} -d\n");
-                if (Shop::isFeatureActive()) {
-                    fwrite($write_fd, $domain_rewrite_cond);
-                }
-                fwrite($write_fd, "RewriteRule ^.*$ - [NC,L]\n");
-                if (Shop::isFeatureActive()) {
-                    fwrite($write_fd, $domain_rewrite_cond);
-                }
-                fwrite($write_fd, "RewriteRule ^.*\$ %{ENV:REWRITEBASE}index.php [NC,L]\n");
+                self::writeHtaccessDispatcherRules($write_fd, $dispatcher_cond);
             }
         }
 
@@ -2880,6 +2871,75 @@ FileETag none
         }
 
         return true;
+    }
+
+    /**
+     * @param resource $writeFd
+     * @param string $imageConditions RewriteCond lines written before each image rule
+     * @param string $fancyboxCondition RewriteCond line written before the fancybox rule
+     */
+    private static function writeHtaccessShopRules($writeFd, bool $rewriteSettings, string $imageConditions, string $fancyboxCondition): void
+    {
+        // Webservice
+        fwrite($writeFd, 'RewriteRule ^api(?:/(.*))?$ %{ENV:REWRITEBASE}webservice/dispatcher.php?url=$1 [QSA,L]' . PHP_EOL);
+        // upload folder
+        fwrite($writeFd, 'RewriteRule ^upload/.+$ %{ENV:REWRITEBASE}index.php [QSA,L]' . "\n\n");
+
+        if ($rewriteSettings) {
+            // Compatibility with the old image filesystem
+            fwrite($writeFd, "# Rewrites for product images (support up to < 10 million images)\n");
+
+            // Rewrite product images < 10 millions
+            $pathComponents = [];
+            for ($i = 1; $i <= 7; ++$i) {
+                $pathComponents[] = '$' . ($i + 1); // paths start on 2
+                $pathImages = implode('/', $pathComponents);
+                fwrite($writeFd, $imageConditions);
+                fwrite($writeFd, 'RewriteRule ^(' . str_repeat('([\d])', $i) . '(?:\-[\w-]*)?)/.+(\.(?:jpe?g|webp|png|avif))$ %{ENV:REWRITEBASE}img/p/' . $pathImages . '/$1$' . ($i + 2) . " [L]\n");
+            }
+
+            fwrite($writeFd, "# Rewrites for category images\n");
+            fwrite($writeFd, $imageConditions);
+            fwrite($writeFd, 'RewriteRule ^c/([\d]+)(|_thumb)(\-[\.*\w-]*)/.+(\.(?:jpe?g|webp|png|avif))$ %{ENV:REWRITEBASE}img/c/$1$2$3$4 [L]' . PHP_EOL);
+            fwrite($writeFd, $imageConditions);
+            fwrite($writeFd, 'RewriteRule ^c/([a-zA-Z_-]+)(|_thumb)(-[\d]+)?/.+(\.(?:jpe?g|webp|png|avif))$ %{ENV:REWRITEBASE}img/c/$1$2$3$4 [L]' . PHP_EOL);
+        }
+
+        fwrite($writeFd, "# AlphaImageLoader for IE and fancybox\n");
+        fwrite($writeFd, $fancyboxCondition);
+        fwrite($writeFd, 'RewriteRule ^images_ie/?([^/]+)\.(jpe?g|png|gif)$ %{ENV:REWRITEBASE}js/jquery/plugins/fancybox/images/$1.$2 [L]' . PHP_EOL);
+    }
+
+    /**
+     * @param string[] $hosts host regexes
+     *
+     * @return string RewriteCond lines matching any of the hosts
+     */
+    private static function getHtaccessHostConditions(array $hosts): string
+    {
+        $conditions = [];
+        // Apache rejects .htaccess lines longer than 8 KB
+        foreach (array_chunk($hosts, 30) as $chunk) {
+            $conditions[] = 'RewriteCond %{HTTP_HOST} ^(?:' . implode('|', $chunk) . ')$';
+        }
+
+        return implode(' [OR]' . PHP_EOL, $conditions) . PHP_EOL;
+    }
+
+    /**
+     * @param resource $writeFd
+     * @param string $hostCondition RewriteCond lines written before each dispatcher rule
+     */
+    private static function writeHtaccessDispatcherRules($writeFd, string $hostCondition): void
+    {
+        fwrite($writeFd, "\n# Send all other traffic to dispatcher\n");
+        fwrite($writeFd, "RewriteCond %{REQUEST_FILENAME} -s [OR]\n");
+        fwrite($writeFd, "RewriteCond %{REQUEST_FILENAME} -l [OR]\n");
+        fwrite($writeFd, "RewriteCond %{REQUEST_FILENAME} -d\n");
+        fwrite($writeFd, $hostCondition);
+        fwrite($writeFd, "RewriteRule ^.*$ - [NC,L]\n");
+        fwrite($writeFd, $hostCondition);
+        fwrite($writeFd, "RewriteRule ^.*\$ %{ENV:REWRITEBASE}index.php [NC,L]\n");
     }
 
     /**
