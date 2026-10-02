@@ -11,6 +11,7 @@ use AdminKernel;
 use AppKernel;
 use FrontKernel;
 use Hook;
+use PrestaShop\PrestaShop\Adapter\Cache\Clearer\Symfony\FilesystemKernelCacheClearer;
 use PrestaShop\PrestaShop\Adapter\Cache\Clearer\Symfony\KernelCacheClearerInterface;
 use PrestaShop\PrestaShop\Core\Cache\Clearer\CacheClearerInterface;
 use PrestaShop\PrestaShop\Core\Util\CacheClearLocker;
@@ -124,7 +125,7 @@ final class SymfonyCacheClearer implements CacheClearerInterface
 
                         $kernelCacheCleared = false;
                         /** @var KernelCacheClearerInterface $cacheClearer */
-                        foreach ($this->kernelCacheClearers as $cacheClearer) {
+                        foreach ($this->getKernelCacheClearers($kernel, $applicationKernel) as $cacheClearer) {
                             try {
                                 // If one clearer succeeds it is enough we can stop the loop
                                 if ($kernelCacheCleared = $cacheClearer->clearKernelCache($applicationKernel, $environment)) {
@@ -168,6 +169,30 @@ final class SymfonyCacheClearer implements CacheClearerInterface
                 CacheClearLocker::unlock($kernel->getEnvironment(), $kernel->getAppId());
             }
         });
+    }
+
+    /**
+     * Only the current application is cleared and warmed up right away. The cache of the other applications and
+     * environments is removed from the filesystem and will be rebuilt on their next use: booting them to run cache:clear
+     * would compile their container only to delete it.
+     *
+     * @return iterable<KernelCacheClearerInterface>
+     */
+    protected function getKernelCacheClearers(AppKernel $currentKernel, AppKernel $applicationKernel): iterable
+    {
+        if ($applicationKernel->getEnvironment() === $currentKernel->getEnvironment()
+            && $applicationKernel->getAppId() === $currentKernel->getAppId()) {
+            return $this->kernelCacheClearers;
+        }
+
+        $filesystemCacheClearers = [];
+        foreach ($this->kernelCacheClearers as $cacheClearer) {
+            if ($cacheClearer instanceof FilesystemKernelCacheClearer) {
+                $filesystemCacheClearers[] = $cacheClearer;
+            }
+        }
+
+        return !empty($filesystemCacheClearers) ? $filesystemCacheClearers : $this->kernelCacheClearers;
     }
 
     protected function unlockOtherApp(AppKernel $currentKernel, string $otherEnvironment, string $otherAppId): void
