@@ -8,7 +8,6 @@ use PrestaShop\PrestaShop\Adapter\MailTemplate\MailPartialTemplateRenderer;
 use PrestaShop\PrestaShop\Adapter\Shipment\OrderShipmentCreator;
 use PrestaShop\PrestaShop\Adapter\Shipment\OrderShipmentService;
 use PrestaShop\PrestaShop\Adapter\Shipment\ShipmentShippingCostUpdater;
-use PrestaShop\PrestaShop\Adapter\StockManager;
 use PrestaShop\PrestaShop\Core\Addon\Module\ModuleManagerBuilder;
 use PrestaShop\PrestaShop\Core\FeatureFlag\FeatureFlagSettings;
 use PrestaShop\PrestaShop\Core\FeatureFlag\FeatureFlagStateCheckerInterface;
@@ -788,15 +787,6 @@ abstract class PaymentModuleCore extends Module
             }
 
             $order->updateOrderDetailTax();
-
-            // sync all stock
-            (new StockManager())->updatePhysicalProductQuantity(
-                (int) $order->id_shop,
-                (int) Configuration::get('PS_OS_ERROR'),
-                (int) Configuration::get('PS_OS_CANCELED'),
-                null,
-                (int) $order->id
-            );
         } // End foreach $order_detail_list
 
         // Use the last order as currentOrder
