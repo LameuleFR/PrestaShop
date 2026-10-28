@@ -109,6 +109,19 @@ class OrderFeatureContext extends AbstractPrestaShopFeatureContext
     }
 
     /**
+     * @Then /^current cart order total paid should be (\d+\.\d+)( tax included| tax excluded)?$/
+     */
+    public function checkOrderTotalPaid($expectedTotal, $taxes = null)
+    {
+        $order = $this->getCurrentCartOrder();
+        $withTaxes = $taxes == ' tax excluded' ? false : true;
+        $total = $withTaxes ? $order->total_paid_tax_incl : $order->total_paid_tax_excl;
+        if ((float) $expectedTotal != (float) $total) {
+            throw new RuntimeException(sprintf('Expects %s, got %s instead', $expectedTotal, $total));
+        }
+    }
+
+    /**
      * @Then /^current cart order cart rules count should be (\d+)$/
      */
     public function checkOrderCartRulesCount($expectedCount)
@@ -262,6 +275,28 @@ class OrderFeatureContext extends AbstractPrestaShopFeatureContext
                 $carrierId,
                 (int) $order->id_carrier
             ));
+        }
+    }
+
+    /**
+     * @Then order :reference should be split into :count orders with following summed details:
+     */
+    public function checkSplitOrdersSummedDetails(string $orderReference, int $count, TableNode $table): void
+    {
+        $order = new Order(SharedStorage::getStorage()->get($orderReference));
+        $splitOrders = Order::getByReference($order->reference)->getResults();
+        Assert::assertCount($count, $splitOrders);
+
+        foreach ($table->getRowsHash() as $orderField => $expectedSum) {
+            $sum = 0.0;
+            foreach ($splitOrders as $splitOrder) {
+                $sum += (float) $splitOrder->{$orderField};
+            }
+            Assert::assertEquals(
+                (float) $expectedSum,
+                round($sum, 2),
+                sprintf('Invalid sum of order field %s across split orders', $orderField)
+            );
         }
     }
 
